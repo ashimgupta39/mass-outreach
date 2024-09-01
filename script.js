@@ -149,4 +149,4 @@ require('dotenv').config();
     await driver.sleep(60000);
     await driver.quit();
   }
-})();
+})(); 
