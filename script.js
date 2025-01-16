@@ -3,8 +3,14 @@ const chrome = require('selenium-webdriver/chrome');
 require('dotenv').config();
 
 (async function loginToLinkedIn() {
+
+let options = new chrome.Options();
+// options.addArguments('--headless');  // Enable headless mode
+// options.addArguments('--no-sandbox');
+// options.addArguments('--disable-dev-shm-usage');   
   // Set up the Chrome browser
-  let driver = await new Builder().forBrowser('chrome').setChromeOptions(new chrome.Options()).build();
+//   let driver = await new Builder().forBrowser('chrome').setChromeOptions(new chrome.Options()).build();
+  let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
 
   try {
     // Step 1: Navigate to LinkedIn
@@ -31,7 +37,7 @@ require('dotenv').config();
 
     // Step 6: Enter "Manager at Meesho" into the search bar
     let searchBar = await driver.findElement(By.xpath("//*[@id='global-nav-typeahead']/input"));
-    await searchBar.sendKeys(`Engineering at ${process.env.company}`, Key.RETURN);
+    await searchBar.sendKeys(`Engineering Manager at ${process.env.company}`, Key.RETURN);
 
     // Step 7: Wait for search results to load
     await driver.sleep(3000);
@@ -59,14 +65,17 @@ require('dotenv').config();
 
     // Step 9: Find all profile links with the class 'app-aware-link'
     await driver.sleep(2000);
-    let profileLinks = await driver.findElements(By.css('a.app-aware-link.scale-down'));
-
+    let profileLinks = await driver.findElements(By.xpath("//*/div/ul/li[*]/div/div/div/div[2]/div[1]/div[1]/div/span[1]/span/a"));
+    // if (profileLinks.length() == 0){
+    //   profileLinks = await driver.findElements(By.xpath("//*[@id='YSqgT2/dRmCiewadVeRhGA==']/div/ul/li[*]/div/div/div/div[2]/div[1]/div[1]/div/span[1]/span/a"));
+    // }
+    // console.log("profile links - ",profileLinks)
     // Step 10: Extract href attribute (profile links) from the found elements
     
-    for (let link of profileLinks) {
+    for (let link of profileLinks) { 
       let href = await link.getAttribute('href');
       if (href.includes('linkedin.com/in')) {  // Only include valid profile URLs
-        profileUrls.push(href);
+        profileUrls.push(href); 
       }
     }
     }
@@ -86,14 +95,15 @@ require('dotenv').config();
         await driver.get(link);
         await driver.sleep(3000);
         // Wait for the profile page to load
-        await driver.wait(until.elementLocated(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view.pvs-profile-actions__action")), 10000);
+        await driver.wait(until.elementLocated(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view")), 10000);
   
         // Step 12: Find the button with the specific classes and extract the text
-        let button = await driver.findElement(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view.pvs-profile-actions__action"));
+        let buttons = await driver.findElements(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view"));
+        let button = buttons[1];
         let buttonText = await button.findElement(By.css('span.artdeco-button__text')).getText();
 
         // get the name of the person-
-        let profileName = await driver.findElement(By.css("h1.text-heading-xlarge.inline")).getText();
+        let profileName = await driver.findElement(By.css("h1.v-align-middle")).getText();
         let firstName = profileName.split(' ')[0];
         
         console.log(`Profile: ${link} - Button Text: ${buttonText} with ${profileName}`);
