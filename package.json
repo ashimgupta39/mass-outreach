@@ -10,8 +10,9 @@
   "license": "ISC",
   "dependencies": {
     "chromedriver": "^127.0.3",
+    "csv-parser": "^3.1.0",
     "dotenv": "^16.4.5",
-    "nodemailer": "^6.9.14",
+    "nodemailer": "^6.10.0",
     "selenium-webdriver": "^4.23.0"
   }
 }
