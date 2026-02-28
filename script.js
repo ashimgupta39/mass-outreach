@@ -3,8 +3,9 @@ const chrome = require('selenium-webdriver/chrome');
 require('dotenv').config();
 
 (async function loginToLinkedIn() {
+  console.log('Running script.js (People search + Connect flow)');
 
-let options = new chrome.Options();
+  let options = new chrome.Options();
 // options.addArguments('--headless');  // Enable headless mode
 // options.addArguments('--no-sandbox');
 // options.addArguments('--disable-dev-shm-usage');   
@@ -13,14 +14,10 @@ let options = new chrome.Options();
   let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
 
   try {
-    // Step 1: Navigate to LinkedIn
-    await driver.get('https://www.linkedin.com');
+    // Step 1: Go directly to login page (avoids relying on homepage "Sign in" button)
+    await driver.get('https://www.linkedin.com/login');
 
-    // Step 2: Wait for the "Sign in" button to appear and click it
-    let signInButton = await driver.wait(until.elementLocated(By.linkText('Sign in')), 10000);
-    await signInButton.click();
-
-    // Step 3: Wait for the email input field to appear and enter your email
+    // Step 2: Wait for the email input field and enter your email
     let emailInput = await driver.wait(until.elementLocated(By.id('username')), 10000);
     await emailInput.sendKeys(process.env.email_id);
 
@@ -32,124 +29,169 @@ let options = new chrome.Options();
     let loginButton = await driver.findElement(By.xpath("//button[@type='submit']"));
     await loginButton.click();
 
-    // Wait for some post-login element to ensure login is successful
-    await driver.sleep(5000);
-
-    // Step 6: Enter "Manager at Meesho" into the search bar
-    let searchBar = await driver.findElement(By.xpath("//*[@id='global-nav-typeahead']/input"));
-    await searchBar.sendKeys(`Engineering Manager at ${process.env.company}`, Key.RETURN);
-
-    // Step 7: Wait for search results to load
+    // Wait for login to complete
+    await driver.wait(until.urlContains('/feed'), 15000);
     await driver.sleep(3000);
 
-    // Step 8: Click on the "People" filter in the search results
-    let peopleTab = await driver.findElement(By.xpath("//*[@id='search-reusables__filters-bar']/ul/li[1]/button"));
-    await peopleTab.click();
-
-    // Wait for the people filter results to load
-    await driver.sleep(7000);
     let profileUrls = [];
-    await driver.executeScript("window.scrollTo(0, document.body.scrollHeight);");
-    await driver.sleep(2000);
-    let paginationItems = await driver.findElements(By.css("li.artdeco-pagination__indicator.artdeco-pagination__indicator--number.ember-view"));
+    try {
+      const searchQuery = `SDE at ${process.env.company || 'company'}`;
+      await driver.get(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`);
+      await driver.sleep(3000);
+      try {
+        const peopleTab = await driver.findElement(By.xpath("//button[contains(., 'People')]"));
+        await peopleTab.click();
+        await driver.sleep(2000);
+      } catch (e) {
+        // Already on People results or filter has different structure
+      }
+      await driver.sleep(5000);
+    const maxPages = 3; // How many result pages to scrape (page 1 + 2 more)
 
-    let it =0;
-    for (it = 0;it<3;it++){
+    for (let pageNum = 0; pageNum < maxPages; pageNum++) {
+      try {
         await driver.sleep(2000);
         await driver.executeScript("window.scrollTo(0, document.body.scrollHeight);");
-        await driver.sleep(1000);
-        let paginationItems = await driver.findElements(By.css("li.artdeco-pagination__indicator.artdeco-pagination__indicator--number.ember-view"));
-        await driver.sleep(1000);
-        await paginationItems[it].click();
+        await driver.sleep(2000);
 
+        let profileLinks = await driver.findElements(By.css("a.app-aware-link[href*='/in/']"));
+        if (profileLinks.length === 0) {
+          profileLinks = await driver.findElements(By.xpath("//a[contains(@href,'/in/') and not(contains(@href,'?'))]"));
+        }
+        if (profileLinks.length === 0) {
+          profileLinks = await driver.findElements(By.xpath("//*/div/ul/li//div/div/div/div[2]//a[contains(@href,'linkedin.com/in')]"));
+        }
 
-    // Step 9: Find all profile links with the class 'app-aware-link'
-    await driver.sleep(2000);
-    let profileLinks = await driver.findElements(By.xpath("//*/div/ul/li[*]/div/div/div/div[2]/div[1]/div[1]/div/span[1]/span/a"));
-    // if (profileLinks.length() == 0){
-    //   profileLinks = await driver.findElements(By.xpath("//*[@id='YSqgT2/dRmCiewadVeRhGA==']/div/ul/li[*]/div/div/div/div[2]/div[1]/div[1]/div/span[1]/span/a"));
-    // }
-    // console.log("profile links - ",profileLinks)
-    // Step 10: Extract href attribute (profile links) from the found elements
-    
-    for (let link of profileLinks) { 
-      let href = await link.getAttribute('href');
-      if (href.includes('linkedin.com/in')) {  // Only include valid profile URLs
-        profileUrls.push(href); 
+        const seen = new Set(profileUrls);
+        for (const link of profileLinks) {
+          try {
+            const href = await link.getAttribute('href');
+            const cleanHref = href ? href.split('?')[0] : '';
+            if (cleanHref && cleanHref.includes('linkedin.com/in/') && !seen.has(cleanHref)) {
+              seen.add(cleanHref);
+              profileUrls.push(cleanHref);
+            }
+          } catch (e) { /* skip this link */ }
+        }
+        console.log(`Page ${pageNum + 1}: found ${profileLinks.length} links, total unique so far: ${profileUrls.length}`);
+
+        if (pageNum + 1 >= maxPages) break;
+        let nextClicked = false;
+        try {
+          const nextBtn = await driver.findElement(By.css("button.artdeco-pagination__button--next"));
+          const disabled = await nextBtn.getAttribute('aria-disabled');
+          if (disabled !== 'true') {
+            await nextBtn.click();
+            nextClicked = true;
+            await driver.sleep(3000);
+          }
+        } catch (e) { /* no next button or single page */ }
+        if (!nextClicked) break;
+      } catch (e) {
+        console.warn(`Page ${pageNum + 1} error (continuing):`, e.message);
       }
     }
+    } catch (e) {
+      console.warn('Search or extraction error (continuing with collected links):', e.message);
     }
-    
-    await driver.sleep(3000);
-    
-    // Print all the extracted profile URLs
+
+    await driver.sleep(2000);
     console.log('Extracted Profile Links:', profileUrls);
     await driver.sleep(3000);
     // Step 10: Loop through the buttons and click only those with the text 'Connect'
 
-    let role = "SDE 1"
-    let xx = 0;
-    for (let link of profileUrls) {
-        xx++;
-        // if(xx<26) continue;
+    const role = process.env.role || "SDE 1";
+    for (let xx = 0; xx < profileUrls.length; xx++) {
+      const link = profileUrls[xx];
+      try {
         await driver.get(link);
         await driver.sleep(3000);
-        // Wait for the profile page to load
-        await driver.wait(until.elementLocated(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view")), 10000);
-  
-        // Step 12: Find the button with the specific classes and extract the text
-        let buttons = await driver.findElements(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view"));
-        let button = buttons[1];
-        let buttonText = await button.findElement(By.css('span.artdeco-button__text')).getText();
 
-        // get the name of the person-
-        let profileName = await driver.findElement(By.css("h1.v-align-middle")).getText();
-        let firstName = profileName.split(' ')[0];
-        
-        console.log(`Profile: ${link} - Button Text: ${buttonText} with ${profileName}`);
+        let profileName = 'there';
+        try {
+          const nameEl = await driver.findElement(By.css("h1.text-heading-xlarge, h1.v-align-middle, h1.inline"));
+          profileName = await nameEl.getText();
+        } catch (e) { /* name optional */ }
+        const firstName = profileName.split(' ')[0] || 'there';
 
-        // if the first button is Connect-
-        if(buttonText == "Connect"){
-            await button.click()
-            await driver.sleep(2000)
-            let noteButton = await driver.findElement(By.css("button.mr1"));
-            await noteButton.click();
-            await driver.sleep(2000);
-
-            let referral_msg= `Hi ${firstName}, I recently came across a ${process.env.role} opening at your company. The role suits my experience and skills. It would be really helpful if you could refer me for it. Please accept my invite so that I can share my resume for the same. Thanks! `
-            let searchBar = await driver.findElement(By.css("textarea.ember-text-area"));
-            await searchBar.sendKeys(referral_msg);
-            await driver.sleep(1000);
-            await driver.findElement(By.css("button.ml1")).click();
-            await driver.sleep(4000);
+        let buttons = [];
+        try {
+          await driver.wait(until.elementLocated(By.css("button.artdeco-button--primary")), 8000);
+          buttons = await driver.findElements(By.css("button.artdeco-button.artdeco-button--2.artdeco-button--primary.ember-view, button.artdeco-button--primary"));
+        } catch (e) {
+          console.warn(`Skipping ${link}: no primary buttons found`);
+          continue;
         }
-        else{
-            let moreButtons = await driver.findElements(By.css('button.artdeco-dropdown__trigger.artdeco-dropdown__trigger--placement-bottom.artdeco-button--secondary'));
-            if (moreButtons.length > 0) {
-                await moreButtons[1].click();
+
+        let connectButton = null;
+        let buttonText = '';
+        for (const btn of buttons) {
+          try {
+            const textEl = await btn.findElement(By.css('span.artdeco-button__text'));
+            const text = await textEl.getText();
+            if (text && text.trim().toLowerCase().startsWith('connect')) {
+              connectButton = btn;
+              buttonText = text.trim();
+              break;
             }
-            await driver.sleep(2000);
-            let connectButtons = await driver.findElements(By.css("span.display-flex.t-normal.flex-1"));
-            await connectButtons[7].click();
-            let buttonText = await connectButtons[7].getText();
-            if(buttonText!=="Connect") {continue;}
-            await driver.sleep(2000);
+          } catch (e) { continue; }
+        }
 
-            let noteButton = await driver.findElement(By.css("button.mr1"));
+        if (!connectButton) {
+          console.log(`Profile ${link}: no Connect button (e.g. Message/Pending) - skipping`);
+          continue;
+        }
+
+        console.log(`Profile: ${link} - Button: ${buttonText} - ${profileName}`);
+
+        try {
+          await connectButton.click();
+        } catch (e) {
+          console.warn(`Could not click Connect for ${link}:`, e.message);
+          continue;
+        }
+        await driver.sleep(2000);
+
+        let noteButton = null;
+        try {
+          noteButton = await driver.findElement(By.css("button.mr1"));
+        } catch (e) {
+          try {
+            noteButton = await driver.findElement(By.xpath("//button[contains(., 'Add a note')]"));
+          } catch (e2) { /* no note option */ }
+        }
+        if (noteButton) {
+          try {
             await noteButton.click();
             await driver.sleep(2000);
-
-            let referral_msg= `Hi ${firstName}, I recently came across a ${process.env.role} opening at your company. The role suits my experience and skills. It would be really helpful if you could refer me for it. Please accept my invite so that I can share my resume for the same. Thanks! `
-            let searchBar = await driver.findElement(By.css("textarea.ember-text-area"));
-            await searchBar.sendKeys(referral_msg);
+            const referral_msg = `Hi ${firstName}, I recently came across a ${role} opening at your company. The role suits my experience and skills. It would be really helpful if you could refer me for it. Please accept my invite so that I can share my resume for the same. Thanks! `;
+            const textarea = await driver.findElement(By.css("textarea.ember-text-area, textarea.msg-form__message-texteditor"));
+            await textarea.sendKeys(referral_msg);
             await driver.sleep(1000);
-            await driver.findElement(By.css("button.ml1")).click();
+            const sendBtn = await driver.findElement(By.css("button.ml1, button.msg-form__send-button"));
+            await sendBtn.click();
             await driver.sleep(4000);
-
+          } catch (e) {
+            console.warn(`Could not add note for ${link}:`, e.message);
+            try {
+              const dismissBtn = await driver.findElement(By.css("button.artdeco-modal__dismiss"));
+              await dismissBtn.click();
+              await driver.sleep(1000);
+            } catch (e2) { /* ignore */ }
+          }
+        } else {
+          try {
+            const sendBtn = await driver.findElement(By.css("button.artdeco-button--primary[aria-label*='Send'], button.ml1"));
+            await sendBtn.click();
+            await driver.sleep(2000);
+          } catch (e2) { /* ignore */ }
         }
+      } catch (error) {
+        console.warn(`Skipping profile ${link}:`, error.message);
       }
+    }
 
-    console.log('Successfully searched for "Manager at Meesho" and clicked on the People filter.');
+    console.log('Profile visit loop finished.');
 
     console.log('Successfully logged into LinkedIn!');
   } catch (error) {

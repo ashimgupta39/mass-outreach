@@ -19,7 +19,7 @@ Hi ${name},<br>
 <br>
 I hope you are doing great. I have 1.5 years of experience in software engineering (${skills || "a relevant role"}) at Tredence Inc., <b>a global leader in AI-driven analytics</b> serving <b>200+ Fortune 500 companies</b>. I was hoping you could refer me to ${
   jobLink
-    ? `<a href="${jobLink}">a relevant role</a>`
+    ? `<a href="${jobLink}">${jobLink}</a>`
     : "a relevant role" 
 }.<br>
 <br>
@@ -71,10 +71,11 @@ const parseAndSendEmails = (csvFilePath) => {
     .pipe(csvParser())
     .on('data', (row) => {
       const email = row.Email;
-      const name = row.Name || 'there'; // Default to 'there' if no name is provided
-      const skills = row['Relevant Skills'] || ''; // Empty string if no skills are provided
-      const jobLink = row['Job Link'] || ''; // Optional job link
-      if (email) {
+      const CompanyName = row.CompanyName;
+      const name = row.FirstName || 'there'; // Default to 'there' if no name is provided
+      const skills = "Node.js & React.js" || ''; // Empty string if no skills are provided
+      const jobLink = "https://cashfree.hire.trakstar.com/jobs/fk0vki4/" || ''; // Optional job link
+      if (email && CompanyName == "Cashfree Payments") {
         sendMail(email, name, skills, jobLink);
       }
     })
@@ -86,5 +87,5 @@ const parseAndSendEmails = (csvFilePath) => {
     });
 };
 
-// parseAndSendEmails("/Users/ashimgupta/Documents/webd_projects/linkedin-automation/email_list.csv")
-sendMail("guptaashim29@gmail.com","Ashim","Next.js and React.js","https://jobs.natwestgroup.com/jobs/15480684-software-engineer?bid=370");
+parseAndSendEmails("/Users/ashimgupta/Documents/webd_projects/linkedin-automation/email_list.csv")
+// sendMail("guptaashim29@gmail.com","Ashim","Next.js and React.js","https://jobs.natwestgroup.com/jobs/15480684-software-engineer?bid=370");
